@@ -1,0 +1,122 @@
+# Criar um APP que ao executar mostra o status da conta se atente a fazer asa alterações necessarias
+
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+ 
+# Janela Principal
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "Consulta de Conta do Usuário"
+$form.Size = New-Object System.Drawing.Size(400,360)
+$form.StartPosition = "CenterScreen"
+ 
+# Marca d'água
+$watermark = New-Object System.Windows.Forms.Label
+$watermark.Text = "TECH" #Aqui é uma marca da sua equipe
+$watermark.ForeColor = [System.Drawing.Color]::FromArgb(128, 0, 64)
+$watermark.Font = New-Object System.Drawing.Font("Arial",14,[System.Drawing.FontStyle]::Bold)
+$watermark.AutoSize = $true
+$watermark.Location = New-Object System.Drawing.Point(140,290)
+$form.Controls.Add($watermark)
+ 
+# Campo de entrada
+$label = New-Object System.Windows.Forms.Label
+$label.Text = "Login do usuário:"
+$label.Location = New-Object System.Drawing.Point(10,20)
+$label.Size = New-Object System.Drawing.Size(380,20)
+$form.Controls.Add($label)
+ 
+$inputBox = New-Object System.Windows.Forms.TextBox
+$inputBox.Location = New-Object System.Drawing.Point(10,45)
+$inputBox.Width = 360
+$form.Controls.Add($inputBox)
+ 
+# Campo de saída
+$output = New-Object System.Windows.Forms.TextBox
+$output.Location = New-Object System.Drawing.Point(10,110)
+$output.Size = New-Object System.Drawing.Size(360,100)
+$output.Multiline = $true
+$output.ReadOnly = $true
+$form.Controls.Add($output)
+ 
+# Botão para abrir URL
+$btnLink = New-Object System.Windows.Forms.Button
+$btnLink.Text = "Clique Aqui para ajuda com a senha"
+$btnLink.Location = New-Object System.Drawing.Point(10,220)
+$btnLink.Size = New-Object System.Drawing.Size(360,25)
+$btnLink.Add_Click({
+    Start-Process "https://passwordreset.microsoftonline.com/" #esse é opcional pois só é funcional se fizerem uso do reset de senha via Microsoft
+})
+$form.Controls.Add($btnLink)
+ 
+# Função de consulta
+$consultar = {
+    $usuario = $inputBox.Text
+    if ($usuario -ne "") {
+        Try {
+            $resultado = net user $usuario /domain
+ 
+            if ($resultado) {
+                function ExtrairCampoSeguro($resultado, $padrao, $nomeCampo) {
+                    $linha = $resultado | Where-Object {$_ -match $padrao}
+                    if ($linha) {
+                        $valor = $linha -replace "$padrao\s*[:：]?\s*", ""
+                        return $valor.Trim()
+                    } else {
+                        return "$nomeCampo não encontrado"
+                    }
+                }
+ 
+                $nomeCompleto = ExtrairCampoSeguro $resultado "Nome completo" "Nome completo" # campos que eu quero que traga
+                $statusConta  = ExtrairCampoSeguro $resultado "Conta ativa" "Status da Conta" # campos que eu quero que traga
+                $expiraSenha  = ExtrairCampoSeguro $resultado "A senha expira" "Expiração de senha" # campos que eu quero que traga
+ 
+                # Normaliza e interpreta os valores
+                $statusConta = $statusConta.Trim().ToLower()
+                switch ($statusConta) {
+                    "sim" { $statusConta = "Ativada" }
+                    "não" { $statusConta = "Desativada" }
+                    "nao" { $statusConta = "Desativada" }
+                    "nÆo" { $statusConta = "Desativada" }
+                    "Bloqueado" { $statusConta = "Bloqueado" }
+                    default { $statusConta = "Status desconhecido" }
+                }
+ 
+                $expiraSenha = $expiraSenha.Trim().ToLower()
+                switch ($expiraSenha) {
+                    "sim" { $expiraSenha = "Sim" }
+                    "não" { $expiraSenha = "Não" }
+                    "nao" { $expiraSenha = "Não" }
+                    "nÆo" { $expiraSenha = "Não" }
+                    default { $expiraSenha = $expiraSenha }  # Mantém a data original
+                }
+ 
+                $output.Text = "Nome completo: $nomeCompleto`r`nStatus da Conta: $statusConta`r`nSenha expira: $expiraSenha"
+            } else {
+                $output.Text = "Usuário não encontrado no domínio."
+            }
+        } Catch {
+            $output.Text = "Erro ao consultar. Verifique se o login existe e a conexão com o domínio."
+        }
+    } else {
+        $output.Text = "Por favor, insira um login de usuário."
+    }
+}
+ 
+# Botão de consulta
+$button = New-Object System.Windows.Forms.Button
+$button.Text = "Consultar"
+$button.Location = New-Object System.Drawing.Point(10,80)
+$button.Width = 360
+$button.Add_Click($consultar)
+$form.Controls.Add($button)
+ 
+# Consulta ao pressionar Enter
+$inputBox.Add_KeyDown({
+    if ($_.KeyCode -eq "Enter") {
+        $consultar.Invoke()
+    }
+})
+ 
+# Exibe o app
+$form.Topmost = $true
+$form.ShowDialog()
