@@ -1,0 +1,200 @@
+
+# TechCCR-Toolkit.ps1
+# GUI preta com letras brancas, executando em contexto de USUÁRIO.
+# Log contínuo em %TEMP%\TechCCR-Toolkit.log
+# Criado por ADICIONE SEU SETOR
+
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# ---------------------------
+# LOG CONTÍNUO EM %TEMP%
+# ---------------------------
+$logPath = Join-Path ([System.IO.Path]::GetTempPath()) "TechCCR-Toolkit.log" # ajuste o nome
+
+Add-Content -Path $logPath -Value @"
+====================================================
+Início do Toolkit
+Data/Hora: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Hostname : $env:COMPUTERNAME
+Usuário  : $env:USERNAME
+====================================================
+"@ -Encoding UTF8
+
+# ---------------------------
+# GUI - Form principal
+# ---------------------------
+$form               = New-Object System.Windows.Forms.Form
+$form.Text          = "Tech CCR - Toolkit (Usuário)" # ajuste o nome
+$form.StartPosition = "CenterScreen"
+$form.Size          = New-Object System.Drawing.Size(720, 470)
+$form.FormBorderStyle = 'FixedDialog'
+$form.MaximizeBox   = $false
+$form.BackColor     = [System.Drawing.Color]::Black
+$form.ForeColor     = [System.Drawing.Color]::White
+
+# Título
+$lblTitle                  = New-Object System.Windows.Forms.Label
+$lblTitle.Text             = "Ferramentas de Suporte do Usuário"
+$lblTitle.Font             = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
+$lblTitle.AutoSize         = $true
+$lblTitle.Location         = New-Object System.Drawing.Point(16, 16)
+$lblTitle.ForeColor        = [System.Drawing.Color]::White
+$form.Controls.Add($lblTitle)
+
+# Área de Log (GUI)
+$txtLog               = New-Object System.Windows.Forms.TextBox
+$txtLog.Multiline     = $true
+$txtLog.ReadOnly      = $true
+$txtLog.ScrollBars    = 'Vertical'
+$txtLog.Location      = New-Object System.Drawing.Point(20, 280)
+$txtLog.Size          = New-Object System.Drawing.Size(660, 140)
+$txtLog.BackColor     = [System.Drawing.Color]::FromArgb(12,12,12)
+$txtLog.ForeColor     = [System.Drawing.Color]::White
+$txtLog.Font          = New-Object System.Drawing.Font("Consolas", 10)
+$form.Controls.Add($txtLog)
+
+# Rodapé
+$lblFooter          = New-Object System.Windows.Forms.Label
+$lblFooter.Text     = "© Tech CCR"
+$lblFooter.AutoSize = $true
+$lblFooter.Location = New-Object System.Drawing.Point(20, 430)
+$form.Controls.Add($lblFooter)
+
+# ---------------------------
+# Funções de suporte
+# ---------------------------
+function Add-Log {
+    param([string]$msg)
+    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $line = "[$timestamp] $msg"
+
+    # GUI
+    $txtLog.AppendText("$line`r`n")
+    $txtLog.ScrollToCaret()
+
+    # Arquivo
+    Add-Content -Path $logPath -Value $line -Encoding UTF8
+}
+
+function Get-IPv4Valido {
+    try {
+        $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+               Where-Object {
+                    $_.IPAddress -and
+                    $_.IPAddress -notlike '127.*' -and
+                    $_.IPAddress -notlike '169.254.*'
+               } |
+               Select-Object -First 1 -ExpandProperty IPAddress)
+
+        if ([string]::IsNullOrWhiteSpace($ip)) { return "(sem IPv4 válido)" }
+        return $ip
+    } catch {
+        return "(erro ao obter IPv4)"
+    }
+}
+
+# ---------------------------
+# AÇÕES
+# ---------------------------
+function Do-InfoMaquina {
+    $hn = $env:COMPUTERNAME
+    $ip = Get-IPv4Valido
+    Add-Log "Hostname: $hn"
+    Add-Log "IP: $ip"
+    [System.Windows.Forms.MessageBox]::Show("Hostname: $hn`nIP: $ip","Informações","OK","Information") | Out-Null
+}
+
+function Do-GpupdateUser {
+    Add-Log "Executando gpupdate /target:user /force"
+    Start-Process cmd.exe "/c gpupdate /target:user /force" -NoNewWindow -Wait
+    Add-Log "GPUpdate finalizado"
+}
+
+function Do-GlobalProtectReconnect {
+    Add-Log "Reiniciando agente GlobalProtect (modo usuário)"
+    Stop-Process -Name PanGPA -Force -ErrorAction SilentlyContinue
+    Start-Sleep 1
+
+    $paths = @(
+        "$env:ProgramFiles\Palo Alto Networks\GlobalProtect\PanGPA.exe",
+        "${env:ProgramFiles(x86)}\Palo Alto Networks\GlobalProtect\PanGPA.exe"
+    )
+
+    foreach ($p in $paths) {
+        if (Test-Path $p) {
+            Start-Process $p
+            Add-Log "Agente iniciado: $p"
+            break
+        }
+    }
+}
+
+function Do-ClearEdgeCacheUser {
+    Add-Log "Limpando cache do Microsoft Edge"
+    Stop-Process -Name msedge -Force -ErrorAction SilentlyContinue
+
+    $base = "$env:LOCALAPPDATA\Microsoft\Edge\User Data"
+    Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item "$($_.FullName)\Cache\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$($_.FullName)\Cache\Cache_Data\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$($_.FullName)\Code Cache\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$($_.FullName)\GPUCache\*" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Add-Log "Cache do Edge limpo"
+}
+
+function Do-ClearChromeCacheUser {
+    Add-Log "Limpando cache do Google Chrome"
+    Stop-Process -Name chrome -Force -ErrorAction SilentlyContinue
+
+    $base = "$env:LOCALAPPDATA\Google\Chrome\User Data"
+    Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item "$($_.FullName)\Cache\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$($_.FullName)\Cache\Cache_Data\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$($_.FullName)\Code Cache\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$($_.FullName)\GPUCache\*" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Add-Log "Cache do Chrome limpo"
+}
+
+function Do-AjusteSom {
+    Add-Log "Abrindo mmsys.cpl"
+    Start-Process mmsys.cpl
+    [System.Windows.Forms.MessageBox]::Show(
+"Na aba REPRODUÇÃO:
+- Deixe habilitado apenas o HEADSET
+- Desabilite os outros dispositivos ativos",
+"Áudio","OK","Information") | Out-Null
+} #caso precise mude a instrução
+
+# ---------------------------
+# Botões
+# ---------------------------
+function New-BlackButton($text,$x,$y,$action){
+    $b = New-Object System.Windows.Forms.Button
+    $b.Text = $text
+    $b.Size = '320,42'
+    $b.Location = "$x,$y"
+    $b.BackColor = [System.Drawing.Color]::FromArgb(30,30,30)
+    $b.ForeColor = [System.Drawing.Color]::White
+    $b.FlatStyle = 'Flat'
+    $b.Add_Click($action)
+    return $b
+}
+
+$left=20; $right=360; $y=60; $g=54
+
+$form.Controls.AddRange(@(
+    (New-BlackButton "Informação da máquina" $left ($y+0*$g) {Do-InfoMaquina}),
+    (New-BlackButton "Atualizar política (usuário)" $left ($y+1*$g) {Do-GpupdateUser}),
+    (New-BlackButton "GlobalProtect - Reiniciar" $left ($y+2*$g) {Do-GlobalProtectReconnect}),
+    (New-BlackButton "Limpar cache Edge" $right ($y+0*$g) {Do-ClearEdgeCacheUser}),
+    (New-BlackButton "Limpar cache Chrome" $right ($y+1*$g) {Do-ClearChromeCacheUser}),
+    (New-BlackButton "Ajuste de som" $right ($y+2*$g) {Do-AjusteSom})
+))
+
+Add-Log "Toolkit carregado" #mensagem de boas vinds
+[void]$form.ShowDialog()
