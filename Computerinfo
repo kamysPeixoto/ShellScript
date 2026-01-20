@@ -1,0 +1,37 @@
+# crie um exe com esse script e coloque ou para rodar ao iniciar a maquina ou via agendador
+
+if ($env:USERDOMAIN -eq "DOMINIO"){ #altere o nome do dominio
+
+## INVENTARIANDO MAQUINA
+
+$computer = Get-CimInstance -ClassName Win32_ComputerSystem
+$memoria = Get-CimInstance -ClassName Win32_ComputerSystem | select @{n='Capacidade (GB)';e={[int]($_.TotalPhysicalMemory/1GB)}}
+$bios = Get-CimInstance -ClassName Win32_BIOS
+$disco = Get-PhysicalDisk | Select-Object FriendlyName, MediaType, HealthStatus, Size
+$tamDisco = Get-PhysicalDisk | select @{n='Capacidade (GB)';e={[int]($_.Size/1GB)}}
+$cpu = Get-CimInstance -ClassName Win32_Processor
+$OS = Get-CimInstance -Class Win32_OperatingSystem -Property Version,Caption,BuildNumber,Manufacturer
+$os_build = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -Name DisplayVersion).DisplayVersion
+$hostname = $env:computername
+$Date = Get-Date -Format "dd/MM/yyyy"
+
+# gerar a tabela
+$data = @()
+$row = New-Object PSObject
+$row | Add-Member -MemberType NoteProperty -Name "Hostname" -Value $computer.Name
+$row | Add-Member -MemberType NoteProperty -Name "Usuario" -Value $computer.UserName
+$row | Add-Member -MemberType NoteProperty -Name "Modelo" -Value $computer.Model
+$row | Add-Member -MemberType NoteProperty -Name "Memoria" -Value $memoria.'Capacidade (GB)'
+$row | Add-Member -MemberType NoteProperty -Name "Fabricante" -Value $computer.Manufacturer
+$row | Add-Member -MemberType NoteProperty -Name "Serial" -Value $bios.SerialNumber
+$row | Add-Member -MemberType NoteProperty -Name "CPU" -Value $cpu.Name
+$row | Add-Member -MemberType NoteProperty -Name "Disco" -Value $disco.MediaType
+$row | Add-Member -MemberType NoteProperty -Name "Capacidade" -Value $tamDisco.'Capacidade (GB)'
+$row | Add-Member -MemberType NoteProperty -Name "Sistema Operacional" -Value $os.Caption
+$row | Add-Member -MemberType NoteProperty -Name "Versao" -Value $os.Version
+$row | Add-Member -MemberType NoteProperty -Name "Build" -Value $os_build
+$row | Add-Member -MemberType NoteProperty -Name "Data" -Value $Date
+$data += $row
+
+$data | Export-Csv "\\DIRETORIO-NA-REDE\$hostname.csv" -NoTypeInformation # mude o diretorio para salvar o arquivo, VAI SALVAR O ARQUIVO COM O NOME DO HOSTNAME
+}
